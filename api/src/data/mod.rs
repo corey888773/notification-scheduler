@@ -1,2 +1,2 @@
 pub(crate) mod db;
-mod notifications;
+pub mod notifications;
