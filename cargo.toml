@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "api",
+    "push_consumer",
+    "email_consumer",
+]

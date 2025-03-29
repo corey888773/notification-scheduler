@@ -8,19 +8,24 @@ use crate::app_state::AppState;
 
 pub fn routes(state: Arc<AppState>) -> Router{
     let routes = Router::new()
-        .route("/", post(test))
+        .route("/", post(create))
         .with_state(state);
 
-    Router::new().nest("/notifs", routes)
+    Router::new().nest("/notifications", routes)
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-struct TestRequest{
-    #[serde(rename = "test")] test: String,
+struct CreateRequest{
 }
-async fn test(state: State<Arc<AppState>>, req: Json<TestRequest>) -> impl IntoResponse{
-    println!("->> {:<20}", "/notifs/test");
+async fn create(state: State<Arc<AppState>>, req: Json<CreateRequest>) -> impl IntoResponse{
+    println!("->> POST {:<20}", "/notifications");
 
     Json("Hello, World!")
 
+}
+
+async fn delete (state: State<Arc<AppState>>) -> impl IntoResponse{
+    println!("->> DELETE {:<20}", "/notifications/:id");
+
+    Json("Hello, World!")
 }
