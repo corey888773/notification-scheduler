@@ -1,5 +1,6 @@
-use crate::services::notifications::NotificationService;
 use std::sync::Arc;
+
+use crate::services::notifications::NotificationService;
 
 pub struct AppState {
 	pub notification_service: Arc<dyn NotificationService>,

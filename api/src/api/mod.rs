@@ -1,2 +1,2 @@
-pub mod notifications;
 mod common;
+pub mod notifications;

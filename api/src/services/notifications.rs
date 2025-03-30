@@ -1,6 +1,8 @@
-use crate::{data::notifications, utils::types::AppResult};
-use async_trait::async_trait;
 use std::sync::Arc;
+
+use async_trait::async_trait;
+
+use crate::{data::notifications, utils::types::AppResult};
 
 #[derive(Clone)]
 pub struct NotificationServiceImpl {

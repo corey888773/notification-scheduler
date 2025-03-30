@@ -9,9 +9,11 @@ edition = "2024"
 dotenvy = "0.15.7"
 
 # server
-axum = "0.8.1"
-axum-extra = {version = "0.10.0", features = ["cookie"]}
+axum = { version = "0.8.3", features = ["macros"] }
 tokio = { version = "1.37.0", features = ["full"]}
+
+# kafka
+rdkafka = { version = "0.37.0", features = ["tokio"] }
 
 # serde
 serde = { version = "1.0.197", features = ["derive"] }

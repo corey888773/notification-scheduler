@@ -1,11 +1,12 @@
-use crate::utils::{errors::AppError, types::AppResult};
 use async_trait::async_trait;
 use mongodb::{
 	Collection,
 	bson::doc,
-	error::{ErrorKind, WriteFailure, WriteFailure::WriteError},
+	error::{ErrorKind, WriteFailure::WriteError},
 };
 use serde::{Deserialize, Serialize};
+
+use crate::utils::{errors::AppError, types::AppResult};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Notification {
@@ -53,18 +54,14 @@ impl NotificationRepository for NotificationRepositoryImpl {
 		let result = self.notifications.insert_one(notification.clone()).await;
 		match result {
 			Ok(_) => Ok(notification),
-			Err(e) => {
-				// if it already exists return validation error
-				// if it's a server error, return internal server error
-				match e.kind.as_ref() {
-					ErrorKind::Write(WriteError(write_error)) if write_error.code == 11000 => Err(
-						AppError::DuplicateKey,
-					),
-					_ => Err(AppError::ServiceError(
-						"Failed to create notification".to_string(),
-					)),
+			Err(e) => match e.kind.as_ref() {
+				ErrorKind::Write(WriteError(write_error)) if write_error.code == 11000 => {
+					Err(AppError::DuplicateKey)
 				}
-			}
+				_ => Err(AppError::RepositoryError(
+					"Failed to create notification".to_string(),
+				)),
+			},
 		}
 	}
 }
