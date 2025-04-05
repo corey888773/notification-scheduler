@@ -5,7 +5,7 @@ use futures::stream::{FuturesUnordered, StreamExt};
 use tokio::time::sleep;
 
 use crate::{
-	data::notifications,
+	data::{notifications, notifications::Notification},
 	messaging::broker,
 	utils::{errors::AppError, types::AppResult},
 };
@@ -18,8 +18,8 @@ pub struct NotificationServiceImpl {
 
 #[async_trait]
 pub trait NotificationService: Send + Sync {
-	async fn create_notification(&self, notification: notifications::Notification)
-	-> AppResult<()>;
+	async fn create_notification(&self, notification: Notification) -> AppResult<()>;
+	async fn stop_notification(&self, id: String) -> AppResult<()>;
 	async fn send_messages(&self, priority: String) -> AppResult<()>;
 }
 
@@ -33,7 +33,7 @@ impl NotificationServiceImpl {
 }
 
 impl NotificationServiceImpl {
-	async fn send_individual_message(&self, message: notifications::Notification) -> AppResult<()> {
+	async fn send_individual_message(&self, message: Notification) -> AppResult<()> {
 		let message_string =
 			serde_json::to_string(&message).map_err(|e| AppError::ServiceError(e.to_string()))?;
 		self.broker
@@ -65,6 +65,10 @@ impl NotificationService for NotificationServiceImpl {
 		self.broker
 			.send_message("email", &notification_string, "")
 			.await
+	}
+
+	async fn stop_notification(&self, id: String) -> AppResult<()> {
+		self.update_message_status(id, "stopped".to_string()).await
 	}
 
 	async fn send_messages(&self, priority: String) -> AppResult<()> {

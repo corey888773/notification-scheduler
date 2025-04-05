@@ -23,7 +23,7 @@ impl KafkaConsumer {
 		Self { message_consumer }
 	}
 
-	pub async fn start(&self) -> () {
+	pub async fn start(&self) {
 		let mut message_stream = self.message_consumer.stream();
 		while let Some(message_result) = message_stream.next().await {
 			match message_result {

@@ -13,3 +13,9 @@ api\:run:
 .PHONY: email\:run
 email\:run:
 	cargo run --bin email_consumer
+
+.PHONY: fmt
+fmt:
+	cargo clippy --all-targets --all-features --fix --allow-dirty --allow-staged
+	cargo fmt --all
+	cargo fix --allow-dirty --allow-staged --edition-idioms --workspace

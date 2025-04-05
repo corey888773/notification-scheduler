@@ -1,12 +1,10 @@
+#![deny(unused_imports)]
+
 use std::{env, time::Duration};
 
 use axum_prometheus::PrometheusMetricLayer;
 
-use crate::{
-	crone::scheduler::CronScheduler,
-	data::notifications::NotificationRepository,
-	services::notifications::NotificationService,
-};
+use crate::crone::scheduler::CronScheduler;
 
 mod api;
 mod app_state;
@@ -52,7 +50,6 @@ async fn main() {
 			metric_handle: metric_handle.clone(),
 		})
 		.await;
-
 
 	// Start the servers
 	let scheduler = crone::scheduler::CronSchedulerImpl::new(Duration::from_secs(5), move || {
