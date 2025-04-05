@@ -4,3 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+rdkafka = { version = "0.37.0", features = ["tokio"] }
+tokio = { version = "1.37.0", features = ["full"]}
+async-trait = "0.1.88"
+dotenvy = "0.15.7"
+futures = "0.3.31"

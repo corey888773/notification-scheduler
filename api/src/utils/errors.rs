@@ -13,7 +13,7 @@ pub enum AppError {
 	ValidationError(String),
 	#[error("Service error: {0}")]
 	ServiceError(String),
-	#[error("Repository error: {0}")]
+	#[error("Data access error: {0}")]
 	RepositoryError(String),
 }
 

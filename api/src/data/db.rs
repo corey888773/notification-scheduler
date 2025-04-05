@@ -27,15 +27,11 @@ impl DbContext {
 async fn create_notifications_indexes(
 	coll: &mongodb::Collection<Notification>,
 ) -> Result<(), mongodb::error::Error> {
-	let status_index = mongodb::IndexModel::builder()
-		.keys(doc! { "status": 1 })
-		.options(
-			mongodb::options::IndexOptions::builder()
-				.unique(true)
-				.build(),
-		)
+	let priority_status_index = mongodb::IndexModel::builder()
+		.keys(doc! { "priority": 1, "status": 1 })
+		.options(mongodb::options::IndexOptions::builder().build())
 		.build();
 
-	coll.create_index(status_index).await?;
+	coll.create_index(priority_status_index).await?;
 	Ok(())
 }

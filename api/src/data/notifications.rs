@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use futures::{Stream, StreamExt, TryStreamExt};
 use mongodb::{
 	Collection,
 	bson::doc,
@@ -11,28 +12,39 @@ use crate::utils::{errors::AppError, types::AppResult};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Notification {
 	#[serde(rename = "_id")]
-	id:             Option<String>,
+	pub id:             Option<String>,
 	#[serde(rename = "content")]
-	content:        String,
+	pub content:        String,
 	#[serde(rename = "channel")]
-	channel:        String, // "push" or "email"
+	pub channel:        String, // "push" or "email"
 	#[serde(rename = "recipient")]
-	recipient:      String, // email or device token, but for simplicity, using String
+	pub recipient:      String, // email or device token, but for simplicity, using String
 	#[serde(rename = "scheduledTime")]
-	scheduled_time: u32, // For simplicity, using String (ideally use a DateTime type)
+	pub scheduled_time: u32, // For simplicity, using String (ideally use a DateTime type)
 	#[serde(rename = "timezone")]
-	timezone:       String,
+	pub timezone:       String,
 	#[serde(rename = "priority")]
-	priority:       String,
+	pub priority:       String,
 	#[serde(rename = "status")]
-	status:         String, // "pending", "sent", "failed", "cancelled"
+	pub status:         String, // "pending", "sent", "failed", "cancelled"
 	#[serde(rename = "retryCount")]
-	retry_count:    u32,
+	pub retry_count:    u32,
+}
+
+pub struct GetMessagesOptions {
+	pub priority: Option<String>,
+	pub status:   Option<String>,
+	pub limit:    Option<i64>,
 }
 
 #[async_trait]
 pub trait NotificationRepository: Send + Sync {
 	async fn create(&self, notification: Notification) -> AppResult<Notification>;
+	async fn get_messages(
+		&self,
+		opts: GetMessagesOptions,
+	) -> AppResult<Box<dyn Stream<Item = Result<Notification, AppError>> + Send + Unpin>>;
+	async fn update_message_status(&self, id: String, status: String) -> AppResult<()>;
 }
 
 pub struct NotificationRepositoryImpl {
@@ -62,6 +74,56 @@ impl NotificationRepository for NotificationRepositoryImpl {
 					"Failed to create notification".to_string(),
 				)),
 			},
+		}
+	}
+
+	async fn get_messages(
+		&self,
+		opts: GetMessagesOptions,
+	) -> AppResult<Box<dyn Stream<Item = Result<Notification, AppError>> + Send + Unpin>> {
+		let mut filter = doc! {};
+
+		if let Some(priority) = opts.priority {
+			filter.insert("priority", priority);
+		}
+
+		if let Some(status) = opts.status {
+			filter.insert("status", status);
+		}
+
+		let limit = opts.limit.unwrap_or(i64::MAX);
+		let cursor = self
+			.notifications
+			.find(filter)
+			.limit(limit)
+			.await
+			.map_err(|_| AppError::RepositoryError("Failed to retrieve messages".to_string()))?;
+
+		let stream = cursor.into_stream();
+		let mapped_stream = stream.map(|result| {
+			result.map_err(|e| AppError::RepositoryError(format!("Failed to read document: {}", e)))
+		});
+
+		Ok(Box::new(mapped_stream))
+	}
+
+	async fn update_message_status(&self, id: String, status: String) -> AppResult<()> {
+		let filter = doc! { "_id": id };
+		let update = doc! { "$set": { "status": status } };
+		let result = self
+			.notifications
+			.update_one(filter, update)
+			.await
+			.map_err(|e| {
+				AppError::RepositoryError(format!("Failed to update with err: {:?}", e))
+			})?;
+
+		if result.modified_count == 0 {
+			Err(AppError::RepositoryError(
+				"No documents matched the query".to_string(),
+			))
+		} else {
+			Ok(())
 		}
 	}
 }

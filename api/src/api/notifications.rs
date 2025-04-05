@@ -19,7 +19,7 @@ struct CreateRequest {
 
 #[axum::debug_handler]
 async fn create(state: State<Arc<AppState>>, req: Json<CreateRequest>) -> impl IntoResponse {
-	let service = state.notification_service.as_ref();
+	let service = state.notification_service.clone();
 	let notification = req.notification.clone();
 	match service.create_notification(notification).await {
 		Ok(_) => AppResponse::new(StatusCode::CREATED).into_response(),
