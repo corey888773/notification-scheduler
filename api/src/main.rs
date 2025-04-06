@@ -27,7 +27,7 @@ async fn main() {
 
 	let app_state = app_state::AppState::new(app_state::AppStateOptions {
 		mongo_url: mongo_uri.clone(),
-		nats_url: nats_url.clone(),
+		nats_url:  nats_url.clone(),
 	})
 	.await;
 

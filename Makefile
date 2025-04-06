@@ -5,6 +5,7 @@ compose\:up:
 .PHONY: compose\:down\:all
 compose\:down\:all:
 	docker compose -f docker-compose.yml -f api/docker-compose.yml down --remove-orphans --rmi local --volumes
+	rm rf .image_resources
 
 .PHONY: api\:run
 api\:run:

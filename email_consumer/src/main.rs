@@ -1,10 +1,9 @@
-use common::axum_prometheus::metrics::{set_global_recorder, Recorder};
-use common::monitoring;
-use std::env;
-use std::sync::Arc;
+use std::{env, sync::Arc};
 
-mod consumer;
+use common::{axum_prometheus::metrics::set_global_recorder, monitoring};
+
 mod app_state;
+mod consumer;
 mod metrics;
 
 #[tokio::main]
@@ -18,7 +17,7 @@ async fn main() {
 	let metrics = Arc::new(metrics::metrics::setup_metrics(prometheus_recorder.clone()));
 	set_global_recorder(prometheus_recorder.clone()).expect("Failed to set global recorder");
 
-	let app_state = Arc::new(app_state::AppState{
+	let app_state = Arc::new(app_state::AppState {
 		metrics: metrics.clone(),
 	});
 

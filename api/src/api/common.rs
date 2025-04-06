@@ -3,27 +3,32 @@ use common::axum::{
 	http::StatusCode,
 	response::{IntoResponse, Response},
 };
+use serde::Serialize;
 
-pub struct AppResponse {
+pub struct AppResponse<T: Serialize> {
 	pub status: StatusCode,
-	pub body:   String,
+	pub data:   T, // Store unwrapped data
 }
 
-impl AppResponse {
-	pub fn new_body(status: StatusCode, body: String) -> Self {
-		AppResponse { status, body }
+impl<T: Serialize> AppResponse<T> {
+	pub fn new_with_data(status: StatusCode, data: T) -> Self {
+		AppResponse { status, data }
 	}
+}
 
+// Special implementation for empty responses
+impl AppResponse<serde_json::Value> {
 	pub fn new(status: StatusCode) -> Self {
 		AppResponse {
 			status,
-			body: "".to_string(),
+			data: serde_json::json!({}),
 		}
 	}
 }
 
-impl IntoResponse for AppResponse {
+impl<T: Serialize> IntoResponse for AppResponse<T> {
 	fn into_response(self) -> Response {
-		(self.status, Json(self.body)).into_response()
+		// Single serialization point
+		(self.status, Json(self.data)).into_response()
 	}
 }

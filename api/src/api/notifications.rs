@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use axum::routing::get;
 use common::axum::{
 	Json,
 	Router,
@@ -16,6 +17,7 @@ use crate::{api::common::AppResponse, app_state::AppState, data::notifications::
 pub fn routes(state: Arc<AppState>) -> Router {
 	let routes = Router::new()
 		.route("/", post(create))
+		.route("/", get(get_all))
 		.route("/{id}", delete(stop))
 		.with_state(state);
 
@@ -39,7 +41,7 @@ async fn create(state: State<Arc<AppState>>, req: Json<CreateRequest>) -> impl I
 		.create_notification(notification.clone())
 		.await
 	{
-		Ok(_) => AppResponse::new(StatusCode::CREATED).into_response(),
+		Ok(id) => AppResponse::new_with_data(StatusCode::CREATED, id).into_response(),
 		Err(e) => e.into_response(),
 	}
 }
@@ -49,6 +51,17 @@ async fn stop(state: State<Arc<AppState>>, Path(id): Path<String>) -> impl IntoR
 	let service = state.notification_service.clone();
 	match service.stop_notification(id).await {
 		Ok(_) => AppResponse::new(StatusCode::OK).into_response(),
+		Err(e) => e.into_response(),
+	}
+}
+
+#[debug_handler]
+async fn get_all(state: State<Arc<AppState>>) -> impl IntoResponse {
+	let service = state.notification_service.clone();
+	match service.get_all().await {
+		Ok(notifications) => {
+			AppResponse::new_with_data(StatusCode::OK, notifications).into_response()
+		}
 		Err(e) => e.into_response(),
 	}
 }

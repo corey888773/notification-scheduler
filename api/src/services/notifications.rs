@@ -18,10 +18,11 @@ pub struct NotificationServiceImpl {
 
 #[async_trait]
 pub trait NotificationService: Send + Sync {
-	async fn create_notification(&self, notification: Notification) -> AppResult<()>;
+	async fn create_notification(&self, notification: Notification) -> AppResult<String>;
 	async fn stop_notification(&self, id: String) -> AppResult<()>;
 	async fn send_messages(&self, priority: String) -> AppResult<()>;
 	async fn send_individual_message(&self, message: Notification) -> AppResult<()>;
+	async fn get_all(&self) -> AppResult<Vec<Notification>>;
 }
 
 impl NotificationServiceImpl {
@@ -52,12 +53,10 @@ impl NotificationServiceImpl {
 
 #[async_trait]
 impl NotificationService for NotificationServiceImpl {
-	async fn create_notification(&self, notification: Notification) -> AppResult<()> {
+	async fn create_notification(&self, notification: Notification) -> AppResult<String> {
 		let creation_result = self.repository.create(notification.clone()).await;
 		match creation_result {
-			Ok(_) => {
-				Ok(())
-			}
+			Ok(notification) => Ok(notification.id.unwrap()),
 			Err(e) => Err(e),
 		}
 	}
@@ -80,49 +79,48 @@ impl NotificationService for NotificationServiceImpl {
 			pending_messages
 				.map(|result_message| {
 					let this = self.clone();
-					async move { match result_message {
-						Ok(message) => {
-							let mut attempts = 0;
-							let mut sent = false;
+					async move {
+						match result_message {
+							Ok(message) => {
+								let mut attempts = 0;
+								let mut sent = false;
 
-							while attempts < 3 {
-								attempts += 1;
-								println!(
-									"attempt {:?}",
-									attempts
-								);
-								match this
-									.wrapped_send_individual_message(message.clone())
-									.await
-								{
-									Ok(_) => {
-										sent = true;
-										break;
-									}
-									Err(e) => {
-										eprintln!(
-											"Attempt {} failed for message {:?}: {:?}",
-											attempts,
-											message.id.clone().unwrap(),
-											e
-										);
-										sleep(Duration::from_secs(1)).await;
+								while attempts < 3 {
+									attempts += 1;
+									println!("attempt {:?}", attempts);
+									match this
+										.wrapped_send_individual_message(message.clone())
+										.await
+									{
+										Ok(_) => {
+											sent = true;
+											break;
+										}
+										Err(e) => {
+											eprintln!(
+												"Attempt {} failed for message {:?}: {:?}",
+												attempts,
+												message.id.clone().unwrap(),
+												e
+											);
+											sleep(Duration::from_secs(1)).await;
+										}
 									}
 								}
-							}
 
-							let status = if sent {
-								"sent".to_string()
-							} else {
-								"failed".to_string()
-							};
-							if let Some(id) = message.id.clone() {
-								this.update_message_status(id, status).await?;
+								let status = if sent {
+									"sent".to_string()
+								} else {
+									"failed".to_string()
+								};
+								if let Some(id) = message.id.clone() {
+									this.update_message_status(id, status).await?;
+								}
+								Ok(())
 							}
-							Ok(())
+							Err(e) => Err(e),
 						}
-						Err(e) => Err(e),
-					}}
+					}
 				})
 				.collect::<Vec<_>>()
 				.await,
@@ -145,5 +143,27 @@ impl NotificationService for NotificationServiceImpl {
 		self.broker
 			.send_message(message.channel, message_string, message.id.unwrap())
 			.await
+	}
+
+	async fn get_all(&self) -> AppResult<Vec<Notification>> {
+		let stream = self
+			.repository
+			.get_messages(notifications::GetMessagesOptions {
+				priority: None,
+				status:   None,
+				limit:    None,
+			})
+			.await?;
+
+		let mut notifications = Vec::new();
+		let results: Vec<Result<Notification, AppError>> = stream.collect().await;
+		for result in results {
+			match result {
+				Ok(notification) => notifications.push(notification),
+				Err(e) => return Err(e), // Return first error encountered
+			}
+		}
+
+		Ok(notifications)
 	}
 }
