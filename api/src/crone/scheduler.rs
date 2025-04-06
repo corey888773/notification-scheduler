@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
-use tokio::time;
+use common::tokio::time;
 
 #[async_trait]
 pub trait CronScheduler {

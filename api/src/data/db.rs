@@ -28,7 +28,7 @@ async fn create_notifications_indexes(
 	coll: &mongodb::Collection<Notification>,
 ) -> Result<(), mongodb::error::Error> {
 	let priority_status_index = mongodb::IndexModel::builder()
-		.keys(doc! { "priority": 1, "status": 1 })
+		.keys(doc! { "priority": 1, "status": 1, "scheduledTime": 1 })
 		.options(mongodb::options::IndexOptions::builder().build())
 		.build();
 

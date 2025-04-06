@@ -1,8 +1,8 @@
 use std::{sync::Arc, time::Duration};
 
 use async_trait::async_trait;
+use common::tokio::time::sleep;
 use futures::stream::{FuturesUnordered, StreamExt};
-use tokio::time::sleep;
 
 use crate::{
 	data::{notifications, notifications::Notification},
@@ -21,6 +21,7 @@ pub trait NotificationService: Send + Sync {
 	async fn create_notification(&self, notification: Notification) -> AppResult<()>;
 	async fn stop_notification(&self, id: String) -> AppResult<()>;
 	async fn send_messages(&self, priority: String) -> AppResult<()>;
+	async fn send_individual_message(&self, message: Notification) -> AppResult<()>;
 }
 
 impl NotificationServiceImpl {
@@ -33,12 +34,15 @@ impl NotificationServiceImpl {
 }
 
 impl NotificationServiceImpl {
-	async fn send_individual_message(&self, message: Notification) -> AppResult<()> {
-		let message_string =
-			serde_json::to_string(&message).map_err(|e| AppError::ServiceError(e.to_string()))?;
-		self.broker
-			.send_message(&message.channel, &message_string, "")
-			.await
+	// Simulate a random error for demonstration purposes
+	async fn wrapped_send_individual_message(&self, message: Notification) -> AppResult<()> {
+		let random_number = rand::random::<u8>() % 3;
+		if random_number == 0 {
+			Err(AppError::ServiceError("Random error occurred".to_string()))
+		} else {
+			println!("Sending message: {:?}", message.clone().id.unwrap());
+			self.send_individual_message(message).await
+		}
 	}
 
 	async fn update_message_status(&self, id: String, status: String) -> AppResult<()> {
@@ -48,23 +52,14 @@ impl NotificationServiceImpl {
 
 #[async_trait]
 impl NotificationService for NotificationServiceImpl {
-	async fn create_notification(
-		&self,
-		notification: notifications::Notification,
-	) -> AppResult<()> {
+	async fn create_notification(&self, notification: Notification) -> AppResult<()> {
 		let creation_result = self.repository.create(notification.clone()).await;
-
-		let created_notif = match creation_result {
-			Ok(notification) => notification,
-			Err(e) => {
-				return Err(e);
+		match creation_result {
+			Ok(_) => {
+				Ok(())
 			}
-		};
-
-		let notification_string = serde_json::to_string(&created_notif).unwrap();
-		self.broker
-			.send_message("email", &notification_string, "")
-			.await
+			Err(e) => Err(e),
+		}
 	}
 
 	async fn stop_notification(&self, id: String) -> AppResult<()> {
@@ -85,48 +80,49 @@ impl NotificationService for NotificationServiceImpl {
 			pending_messages
 				.map(|result_message| {
 					let this = self.clone();
-					async move {
-						match result_message {
-							Ok(message) => {
-								let mut attempts = 0;
-								let mut sent = false;
+					async move { match result_message {
+						Ok(message) => {
+							let mut attempts = 0;
+							let mut sent = false;
 
-								while attempts < 3 {
-									attempts += 1;
-									println!(
-										"Sending message: {:?}, attempt {:?}",
-										&message, attempts
-									);
-									match this.send_individual_message(message.clone()).await {
-										Ok(_) => {
-											sent = true;
-											break;
-										}
-										Err(e) => {
-											eprintln!(
-												"Attempt {} failed for message {}: {:?}",
-												attempts,
-												message.id.clone().unwrap(),
-												e
-											);
-											sleep(Duration::from_secs(1)).await;
-										}
+							while attempts < 3 {
+								attempts += 1;
+								println!(
+									"attempt {:?}",
+									attempts
+								);
+								match this
+									.wrapped_send_individual_message(message.clone())
+									.await
+								{
+									Ok(_) => {
+										sent = true;
+										break;
+									}
+									Err(e) => {
+										eprintln!(
+											"Attempt {} failed for message {:?}: {:?}",
+											attempts,
+											message.id.clone().unwrap(),
+											e
+										);
+										sleep(Duration::from_secs(1)).await;
 									}
 								}
-
-								let status = if sent {
-									"sent".to_string()
-								} else {
-									"failed".to_string()
-								};
-								if let Some(id) = message.id.clone() {
-									this.update_message_status(id, status).await?;
-								}
-								Ok(())
 							}
-							Err(e) => Err(e),
+
+							let status = if sent {
+								"sent".to_string()
+							} else {
+								"failed".to_string()
+							};
+							if let Some(id) = message.id.clone() {
+								this.update_message_status(id, status).await?;
+							}
+							Ok(())
 						}
-					}
+						Err(e) => Err(e),
+					}}
 				})
 				.collect::<Vec<_>>()
 				.await,
@@ -141,5 +137,13 @@ impl NotificationService for NotificationServiceImpl {
 			.await;
 
 		Ok(())
+	}
+
+	async fn send_individual_message(&self, message: Notification) -> AppResult<()> {
+		let message_string =
+			serde_json::to_string(&message).map_err(|e| AppError::ServiceError(e.to_string()))?;
+		self.broker
+			.send_message(message.channel, message_string, message.id.unwrap())
+			.await
 	}
 }

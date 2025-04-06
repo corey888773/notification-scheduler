@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
-use axum::{
+use common::axum::{
 	Json,
 	Router,
+	debug_handler,
 	extract::{Path, State},
 	http::StatusCode,
 	response::IntoResponse,
@@ -15,7 +16,7 @@ use crate::{api::common::AppResponse, app_state::AppState, data::notifications::
 pub fn routes(state: Arc<AppState>) -> Router {
 	let routes = Router::new()
 		.route("/", post(create))
-		.route("/:id", delete(stop))
+		.route("/{id}", delete(stop))
 		.with_state(state);
 
 	Router::new().nest("/notifications", routes)
@@ -25,9 +26,11 @@ pub fn routes(state: Arc<AppState>) -> Router {
 struct CreateRequest {
 	#[serde(flatten)]
 	notification: Notification,
+	#[serde(rename = "force")]
+	force:        Option<bool>,
 }
 
-#[axum::debug_handler]
+#[debug_handler]
 async fn create(state: State<Arc<AppState>>, req: Json<CreateRequest>) -> impl IntoResponse {
 	let service = state.notification_service.clone();
 	let notification = req.notification.clone();
@@ -41,7 +44,7 @@ async fn create(state: State<Arc<AppState>>, req: Json<CreateRequest>) -> impl I
 	}
 }
 
-#[axum::debug_handler]
+#[debug_handler]
 async fn stop(state: State<Arc<AppState>>, Path(id): Path<String>) -> impl IntoResponse {
 	let service = state.notification_service.clone();
 	match service.stop_notification(id).await {

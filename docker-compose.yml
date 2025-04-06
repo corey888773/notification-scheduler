@@ -1,25 +1,18 @@
 services:
-  kafka:
-    image: apache/kafka:latest
-    container_name: notification-scheduler-kafka
-    hostname: kafka
+  nats:
+    image: nats:latest
+    container_name: notification-scheduler-nats
+    hostname: nats
+    command: ["-js"]
     ports:
-      - '9092:9092'
+      - "4222:4222"
+      - "8222:8222"
     restart:
         always
     volumes:
-      - .image_resources/kafka:/var/lib/kafka
+      - .image_resources/nats:/data
     healthcheck:
-      test: echo 'describe cluster' | kafka-topics --bootstrap-server localhost:9092 --command-config /etc/kafka/secrets/client.properties
+      test: echo 'PING' | nats --server localhost:4222 --timeout 5s
       interval: 3s
       timeout: 5s
-
-  kafka-topics-setup:
-    container_name: notification-scheduler-kafka-topics-setup
-    image: confluentinc/cp-kafka:latest
-    depends_on:
-      - kafka
-    entrypoint: [ "/bin/sh", "-c" ]
-    command: >
-       "kafka-topics --bootstrap-server kafka:9092 --create --topic email --partitions 1 --replication-factor 1 &&
-       kafka-topics --bootstrap-server kafka:9092 --create --topic push --partitions 1 --replication-factor 1"
+      retries: 5

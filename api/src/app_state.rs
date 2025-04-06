@@ -4,14 +4,14 @@ use crate::{
 	data,
 	data::notifications::NotificationRepository,
 	messaging,
-	messaging::broker::KafkaOptions,
 	services,
 	services::notifications::NotificationService,
 };
+use crate::messaging::broker::NatsOptions;
 
 pub struct AppStateOptions {
 	pub mongo_url: String,
-	pub kafka_url: String,
+	pub nats_url: String,
 }
 
 pub struct AppState {
@@ -27,14 +27,14 @@ impl AppState {
 		let notification_repository: Arc<dyn NotificationRepository> = Arc::new(
 			data::notifications::NotificationRepositoryImpl::new(db.notifications_collection),
 		);
-		let kafka_broker: Arc<dyn messaging::broker::Broker> =
-			Arc::new(messaging::broker::KafkaImpl::new(KafkaOptions {
-				kafka_url: opts.kafka_url,
-			}));
+		let nats_broker: Arc<dyn messaging::broker::Broker> =
+			Arc::new(messaging::broker::NatsImpl::new(NatsOptions {
+				nats_url: opts.nats_url.clone(),
+			}).await);
 		let notification_service: Arc<dyn NotificationService> =
 			Arc::new(services::notifications::NotificationServiceImpl::new(
 				notification_repository,
-				kafka_broker,
+				nats_broker,
 			));
 
 		Arc::new(AppState {

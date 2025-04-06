@@ -2,5 +2,5 @@
 members = [
     "api",
     "push_consumer",
-    "email_consumer",
+    "email_consumer", "common",
 ]

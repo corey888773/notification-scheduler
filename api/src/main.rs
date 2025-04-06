@@ -2,7 +2,7 @@
 
 use std::{env, time::Duration};
 
-use axum_prometheus::PrometheusMetricLayer;
+use common::{axum, axum_prometheus::PrometheusMetricLayer, monitoring, tokio};
 
 use crate::crone::scheduler::CronScheduler;
 
@@ -11,7 +11,6 @@ mod app_state;
 mod crone;
 mod data;
 mod messaging;
-mod monitoring;
 mod server;
 mod services;
 mod utils;
@@ -23,12 +22,12 @@ async fn main() {
 	let prometheus_port: String = env::var("PROMETHEUS_PORT").unwrap_or("9090".to_string());
 	let mongo_uri: String =
 		env::var("MONGO_URI").unwrap_or("mongodb://localhost:27017".to_string());
-	let kafka_url: String = env::var("KAFKA_URL").unwrap_or("localhost:9092".to_string());
-	let host: String = "0.0.0.0".to_string();
+	let nats_url: String = env::var("NATS_URL").unwrap_or("localhost:4222".to_string());
+	let host: String = env::var("HOST").unwrap_or("0.0.0.0".to_string());
 
 	let app_state = app_state::AppState::new(app_state::AppStateOptions {
 		mongo_url: mongo_uri.clone(),
-		kafka_url: kafka_url.clone(),
+		nats_url: nats_url.clone(),
 	})
 	.await;
 
@@ -44,7 +43,7 @@ async fn main() {
 	app = app.layer(prometheus_layer.clone());
 
 	let (prometheus, prometheus_listener) =
-		monitoring::metrics::create_metrics_router(monitoring::metrics::ServerOptions {
+		monitoring::server::create_metrics_router(monitoring::server::ServerOptions {
 			host:          host.clone(),
 			port:          prometheus_port.clone(),
 			metric_handle: metric_handle.clone(),

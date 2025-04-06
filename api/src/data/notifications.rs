@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use futures::{Stream, StreamExt, TryStreamExt};
 use mongodb::{
 	Collection,
@@ -20,9 +21,8 @@ pub struct Notification {
 	#[serde(rename = "recipient")]
 	pub recipient:      String, // email or device token, but for simplicity, using String
 	#[serde(rename = "scheduledTime")]
-	pub scheduled_time: u32, // For simplicity, using String (ideally use a DateTime type)
-	#[serde(rename = "timezone")]
-	pub timezone:       String,
+	pub scheduled_time: DateTime<Utc>, /* For simplicity, using String (ideally use a DateTime
+	                                    * type) */
 	#[serde(rename = "priority")]
 	pub priority:       String,
 	#[serde(rename = "status")]
