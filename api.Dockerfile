@@ -13,7 +13,7 @@ COPY push_consumer push_consumer/
 COPY email_consumer email_consumer/
 
 # Pre-fetch dependencies (optional but helps caching).
-RUN cargo fetch
+#RUN cargo fetch
 
 # Now copy the full source code.
 # Build the API binary in release mode. Adjust package name if needed.

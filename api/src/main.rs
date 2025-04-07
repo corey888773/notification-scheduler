@@ -4,7 +4,7 @@ use std::{env, time::Duration};
 
 use common::{axum, axum_prometheus::PrometheusMetricLayer, monitoring, tokio};
 
-use crate::crone::scheduler::CronScheduler;
+use crate::{crone::scheduler::CronScheduler, data::notifications::Priority};
 
 mod api;
 mod app_state;
@@ -54,9 +54,10 @@ async fn main() {
 	let scheduler = crone::scheduler::CronSchedulerImpl::new(Duration::from_secs(5), move || {
 		let notification_service = app_state.notification_service.clone();
 		async move {
-			println!("Scheduler running");
+			let utc_now = chrono::Utc::now();
+			println!("Scheduler running at: {}", utc_now);
 			notification_service
-				.send_messages("low".to_string())
+				.send_messages(Priority::Low, utc_now)
 				.await
 				.unwrap();
 		}

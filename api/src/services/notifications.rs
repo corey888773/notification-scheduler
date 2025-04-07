@@ -1,11 +1,15 @@
 use std::{sync::Arc, time::Duration};
 
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use common::tokio::time::sleep;
 use futures::stream::{FuturesUnordered, StreamExt};
 
 use crate::{
-	data::{notifications, notifications::Notification},
+	data::{
+		notifications,
+		notifications::{GetMessagesOptions, Notification, Priority, Status},
+	},
 	messaging::broker,
 	utils::{errors::AppError, types::AppResult},
 };
@@ -20,7 +24,11 @@ pub struct NotificationServiceImpl {
 pub trait NotificationService: Send + Sync {
 	async fn create_notification(&self, notification: Notification) -> AppResult<String>;
 	async fn stop_notification(&self, id: String) -> AppResult<()>;
-	async fn send_messages(&self, priority: String) -> AppResult<()>;
+	async fn send_messages(
+		&self,
+		priority: Priority,
+		scheduled_time: DateTime<Utc>,
+	) -> AppResult<()>;
 	async fn send_individual_message(&self, message: Notification) -> AppResult<()>;
 	async fn get_all(&self) -> AppResult<Vec<Notification>>;
 }
@@ -65,13 +73,19 @@ impl NotificationService for NotificationServiceImpl {
 		self.update_message_status(id, "stopped".to_string()).await
 	}
 
-	async fn send_messages(&self, priority: String) -> AppResult<()> {
+	async fn send_messages(
+		&self,
+		priority: Priority,
+		scheduled_time: DateTime<Utc>,
+	) -> AppResult<()> {
 		let pending_messages = self
 			.repository
-			.get_messages(notifications::GetMessagesOptions {
-				priority: Some(priority),
-				status:   Some("pending".to_string()),
-				limit:    Some(10),
+			.get_messages(GetMessagesOptions {
+				priority:          Some(priority),
+				status:            Some(Status::Pending),
+				limit:             Some(10),
+				scheduled_time:    Some(scheduled_time),
+				respect_nighttime: Some(true),
 			})
 			.await?;
 
@@ -87,7 +101,7 @@ impl NotificationService for NotificationServiceImpl {
 
 								while attempts < 3 {
 									attempts += 1;
-									println!("attempt {:?}", attempts);
+									println!("Attempt: {:?} for: {:?} scheduledTime: {:?}", attempts, message.clone().id.unwrap(), message.scheduled_time);
 									match this
 										.wrapped_send_individual_message(message.clone())
 										.await
@@ -141,18 +155,14 @@ impl NotificationService for NotificationServiceImpl {
 		let message_string =
 			serde_json::to_string(&message).map_err(|e| AppError::ServiceError(e.to_string()))?;
 		self.broker
-			.send_message(message.channel, message_string, message.id.unwrap())
+			.send_message(message.channel.into(),message.recipient, message_string, message.id.unwrap())
 			.await
 	}
 
 	async fn get_all(&self) -> AppResult<Vec<Notification>> {
 		let stream = self
 			.repository
-			.get_messages(notifications::GetMessagesOptions {
-				priority: None,
-				status:   None,
-				limit:    None,
-			})
+			.get_messages(GetMessagesOptions::default())
 			.await?;
 
 		let mut notifications = Vec::new();

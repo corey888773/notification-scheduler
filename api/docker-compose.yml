@@ -14,19 +14,19 @@ services:
     container_name: notification-scheduler-api-mongodb
     hostname: mongodb
 
-  api:
-    build:
-      context: .
-      dockerfile: api.Dockerfile
-    environment:
-      - PORT=8000
-      - APP_PORT=8000
-      - PROMETHEUS_PORT=9090
-      - MONGO_URI=mongodb://mongodb:27017/notification-scheduler
-      - NATS_URL=nats:4222
-    command: ["./api"]
-    ports:
-      - '8000:8000'
-      - '9090:9090'
-    depends_on:
-      - mongodb
+#  api:
+#    build:
+#      context: .
+#      dockerfile: api.Dockerfile
+#    environment:
+#      - PORT=8000
+#      - APP_PORT=8000
+#      - PROMETHEUS_PORT=9090
+#      - MONGO_URI=mongodb://mongodb:27017/notification-scheduler
+#      - NATS_URL=nats:4222
+#    command: ["./api"]
+#    ports:
+#      - '8000:8000'
+#      - '9090:9090'
+#    depends_on:
+#      - mongodb

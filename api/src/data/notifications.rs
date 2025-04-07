@@ -3,12 +3,108 @@ use chrono::{DateTime, Utc};
 use futures::{Stream, StreamExt, TryStreamExt};
 use mongodb::{
 	Collection,
-	bson::doc,
+	bson,
+	bson::{doc, oid::ObjectId},
 	error::{ErrorKind, WriteFailure::WriteError},
 };
 use serde::{Deserialize, Serialize};
 
 use crate::utils::{errors::AppError, types::AppResult};
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum Channel {
+	#[serde(rename = "push")]
+	Push,
+	#[serde(rename = "email")]
+	Email,
+}
+impl From<String> for Channel {
+	fn from(s: String) -> Self {
+		match s.as_str() {
+			"push" => Channel::Push,
+			"email" => Channel::Email,
+			_ => panic!("Invalid notification type"),
+		}
+	}
+}
+impl From<Channel> for String {
+	fn from(val: Channel) -> Self {
+		match val {
+			Channel::Push => "push".to_string(),
+			Channel::Email => "email".to_string(),
+		}
+	}
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum Status {
+	#[serde(rename = "pending")]
+	Pending,
+	#[serde(rename = "sent")]
+	Sent,
+	#[serde(rename = "failed")]
+	Failed,
+	#[serde(rename = "cancelled")]
+	Cancelled,
+}
+
+impl From<String> for Status {
+	fn from(s: String) -> Self {
+		match s.as_str() {
+			"pending" => Status::Pending,
+			"sent" => Status::Sent,
+			"failed" => Status::Failed,
+			"cancelled" => Status::Cancelled,
+			_ => panic!("Invalid notification status"),
+		}
+	}
+}
+
+impl From<Status> for String {
+	fn from(val: Status) -> Self {
+		match val {
+			Status::Pending => "pending".to_string(),
+			Status::Sent => "sent".to_string(),
+			Status::Failed => "failed".to_string(),
+			Status::Cancelled => "cancelled".to_string(),
+		}
+	}
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum Priority {
+	#[serde(rename = "high")]
+	High,
+	#[serde(rename = "low")]
+	Low,
+}
+
+impl From<String> for Priority {
+	fn from(s: String) -> Self {
+		match s.as_str() {
+			"high" => Priority::High,
+			"low" => Priority::Low,
+			_ => panic!("Invalid notification priority"),
+		}
+	}
+}
+
+impl From<Priority> for String {
+	fn from(val: Priority) -> Self {
+		match val {
+			Priority::High => "high".to_string(),
+			Priority::Low => "low".to_string(),
+		}
+	}
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct TimeWithTimezone {
+	#[serde(rename = "time")]
+	pub time:            DateTime<Utc>,
+	#[serde(rename = "timezone_offset")]
+	pub timezone_offset: String,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Notification {
@@ -17,24 +113,26 @@ pub struct Notification {
 	#[serde(rename = "content")]
 	pub content:        String,
 	#[serde(rename = "channel")]
-	pub channel:        String, // "push" or "email"
+	pub channel:        Channel, // "push" or "email"
 	#[serde(rename = "recipient")]
 	pub recipient:      String, // email or device token, but for simplicity, using String
 	#[serde(rename = "scheduledTime")]
-	pub scheduled_time: DateTime<Utc>, /* For simplicity, using String (ideally use a DateTime
-	                                    * type) */
+	pub scheduled_time: TimeWithTimezone,
 	#[serde(rename = "priority")]
-	pub priority:       String,
+	pub priority:       Priority,
 	#[serde(rename = "status")]
-	pub status:         String, // "pending", "sent", "failed", "cancelled"
+	pub status:         Status, // "pending", "sent", "failed", "cancelled"
 	#[serde(rename = "retryCount")]
 	pub retry_count:    u32,
 }
 
+#[derive(Default)]
 pub struct GetMessagesOptions {
-	pub priority: Option<String>,
-	pub status:   Option<String>,
-	pub limit:    Option<i64>,
+	pub priority:          Option<Priority>,
+	pub status:            Option<Status>,
+	pub limit:             Option<i64>,
+	pub scheduled_time:    Option<DateTime<Utc>>,
+	pub respect_nighttime: Option<bool>,
 }
 
 #[async_trait]
@@ -60,8 +158,7 @@ impl NotificationRepositoryImpl {
 #[async_trait]
 impl NotificationRepository for NotificationRepositoryImpl {
 	async fn create(&self, notification: Notification) -> AppResult<Notification> {
-		// generate a new UUID for the notification
-		let id = Some(mongodb::bson::oid::ObjectId::new().to_hex());
+		let id = Some(ObjectId::new().to_hex());
 		let notification = Notification { id, ..notification };
 		let result = self.notifications.insert_one(notification.clone()).await;
 		match result {
@@ -81,27 +178,69 @@ impl NotificationRepository for NotificationRepositoryImpl {
 		&self,
 		opts: GetMessagesOptions,
 	) -> AppResult<Box<dyn Stream<Item = Result<Notification, AppError>> + Send + Unpin>> {
-		let mut filter = doc! {};
+		let mut match_stage = doc! {};
 
 		if let Some(priority) = opts.priority {
-			filter.insert("priority", priority);
+			let priority_str: String = priority.into();
+			match_stage.insert("priority", priority_str);
 		}
 
 		if let Some(status) = opts.status {
-			filter.insert("status", status);
+			let status_str: String = status.into();
+			match_stage.insert("status", status_str);
 		}
 
-		let limit = opts.limit.unwrap_or(i64::MAX);
+		if let Some(scheduled_time) = opts.scheduled_time {
+			let scheduled_time_str = scheduled_time.to_rfc3339();
+			match_stage.insert("scheduledTime.time", doc! { "$lte": scheduled_time_str });
+		}
+
+		let mut pipeline = vec![doc! { "$match": match_stage }];
+
+		if opts.respect_nighttime.unwrap_or(false) && opts.scheduled_time.is_some() {
+			let start_hour = 8;
+			let end_hour = 22;
+
+			pipeline.push(doc! {
+				"$addFields": {
+					"userLocalHour": {
+						"$add": [
+							{"$hour": {"$toDate": "$scheduledTime.time"}},
+							{"$divide": [
+								{"$toInt": {"$substr": ["$scheduledTime.timezone_offset", 0, 3]}},
+								1
+							]}
+						]
+					}
+				}
+			});
+
+			pipeline.push(doc! {
+				"$match": {
+					"userLocalHour": {
+						"$gte": start_hour,
+						"$lt": end_hour
+					}
+				}
+			});
+		}
+
+		pipeline.push(doc! { "$limit": opts.limit.unwrap_or(i64::MAX) });
 		let cursor = self
 			.notifications
-			.find(filter)
-			.limit(limit)
+			.aggregate(pipeline)
 			.await
-			.map_err(|_| AppError::RepositoryError("Failed to retrieve messages".to_string()))?;
+			.map_err(|e| AppError::RepositoryError(format!("Failed to aggregate: {}", e)))?;
 
+		// Convert cursor to stream
 		let stream = cursor.into_stream();
 		let mapped_stream = stream.map(|result| {
-			result.map_err(|e| AppError::RepositoryError(format!("Failed to read document: {}", e)))
+			result
+				.map_err(|e| AppError::RepositoryError(format!("Failed to read document: {}", e)))
+				.and_then(|doc| {
+					bson::from_document::<Notification>(doc)
+						.map_err(|e| AppError::SerialError(format!("Failed to deserialize: {}", e)))
+				})
 		});
 
 		Ok(Box::new(mapped_stream))
