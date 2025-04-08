@@ -1,10 +1,18 @@
-.PHONY: compose\:up
-compose\:up:
-	docker compose -f docker-compose.yml -f api/docker-compose.yml up -d
+.PHONY: compose\:up\:stack
+compose\:up\:stack:
+	docker compose -f docker-compose.yml up mongodb nats -d
+
+.PHONY: compose\:up\:build
+compose\:up\:build:
+	docker compose -f docker-compose.yml build
+
+.PHONY: compose\:up\:run
+compose\:up\:run:
+	docker compose -f docker-compose.yml up api email_consumer1 email_consumer2 push_consumer1 push_consumer2
 
 .PHONY: compose\:down\:all
 compose\:down\:all:
-	docker compose -f docker-compose.yml -f api/docker-compose.yml down --remove-orphans --rmi local --volumes
+	docker compose -f docker-compose.yml down --remove-orphans --rmi local --volumes
 	rm -rf .image_resources/
 
 .PHONY: api\:run

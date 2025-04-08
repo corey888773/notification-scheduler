@@ -1800,6 +1800,16 @@ dependencies = [
 [[package]]
 name = "push_consumer"
 version = "0.1.0"
+dependencies = [
+ "async-nats",
+ "axum",
+ "common",
+ "dotenvy",
+ "env_logger",
+ "futures",
+ "log",
+ "tokio",
+]
 
 [[package]]
 name = "quanta"

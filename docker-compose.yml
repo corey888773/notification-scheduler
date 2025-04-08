@@ -1,4 +1,19 @@
 services:
+  mongodb:
+    image: mongo:latest
+    restart: always
+    ports:
+      - '27017:27017'
+    volumes:
+      - .image_resources/mongodb:/data/db
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 3s
+      timeout: 5s
+      retries: 5
+    container_name: notification-scheduler-api-mongodb
+    hostname: mongodb
+
   nats:
     image: nats:latest
     container_name: notification-scheduler-nats
@@ -16,3 +31,92 @@ services:
       interval: 3s
       timeout: 5s
       retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: api.Dockerfile
+    image: notification_scheduler_api:latest
+    environment:
+      - PORT=8000
+      - APP_PORT=8000
+      - PROMETHEUS_PORT=9090
+      - MONGO_URI=mongodb://mongodb:27017/notification-scheduler
+      - NATS_URL=nats:4222
+      - HOST=0.0.0.0
+      - RUST_LOG=debug
+    command: [ "./api" ]
+    ports:
+      - '8000:8000'
+      - '9090:9090'
+    depends_on:
+      - mongodb
+      - nats
+
+  email_consumer1:
+    container_name: notification-scheduler-email-consumer-1
+    build:
+      context: .
+      dockerfile: email_consumer.Dockerfile
+    image: notification_scheduler_email_consumer:latest
+    environment:
+      - NATS_URL=nats:4222
+      - PROMETHEUS_PORT=9090
+      - HOST=0.0.0.0
+      - RECIPIENT_ID=consumer1
+      - RUST_LOG=info
+    command: [ "./email_consumer" ]
+    ports:
+      - '9091:9090'
+    depends_on:
+      - nats
+
+  email_consumer2:
+    container_name: notification-scheduler-email-consumer-2
+    image: notification_scheduler_email_consumer:latest
+    environment:
+      - NATS_URL=nats:4222
+      - PROMETHEUS_PORT=9090
+      - HOST=0.0.0.0
+      - RECIPIENT_ID=consumer1 # purposefully set to consumer1 for testing
+      - RUST_LOG=info
+    command: [ "./email_consumer" ]
+    ports:
+      - '9092:9090'
+    depends_on:
+      - nats
+      - email_consumer1
+
+  push_consumer1:
+    container_name: notification-scheduler-push-consumer-1
+    build:
+      context: .
+      dockerfile: push_consumer.Dockerfile
+    image: notification_scheduler_push_consumer:latest
+    environment:
+      - NATS_URL=nats:4222
+      - PROMETHEUS_PORT=9090
+      - HOST=0.0.0.0
+      - RECIPIENT_ID=consumer1
+      - RUST_LOG=info
+    command: [ "./push_consumer" ]
+    ports:
+      - '9093:9090'
+    depends_on:
+      - nats
+
+  push_consumer2:
+    container_name: notification-scheduler-push-consumer-2
+    image: notification_scheduler_push_consumer:latest
+    environment:
+      - NATS_URL=nats:4222
+      - PROMETHEUS_PORT=9090
+      - HOST=0.0.0.0
+      - RECIPIENT_ID=consumer2 # different from consumer1 for testing
+      - RUST_LOG=info
+    command: [ "./push_consumer" ]
+    ports:
+      - '9094:9090'
+    depends_on:
+      - nats
+      - push_consumer1

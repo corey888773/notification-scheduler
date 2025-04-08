@@ -14,16 +14,16 @@ COPY email_consumer email_consumer/
 
 # Now copy the full source code.
 # Build the API binary in release mode. Adjust package name if needed.
-RUN cargo build --release -p email_consumer
+RUN cargo build --release -p push_consumer
 
 FROM debian:stable-slim AS runtime
 # Set working directory.
 WORKDIR /usr/local/bin
 
 # Copy the built binary from the builder stage.
-COPY --from=builder /usr/src/app/target/release/email_consumer .
+COPY --from=builder /usr/src/app/target/release/push_consumer .
 
 # Expose the port your API listens on.
 EXPOSE 8080
 # Run the API binary.
-CMD ["./email_consumer"]
+CMD ["./push_consumer"]
