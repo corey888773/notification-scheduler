@@ -12,7 +12,6 @@ pub fn setup_metrics(prometheus_recorder: Arc<PrometheusRecorder>) -> Metrics {
 	metrics
 		.register_counter(
 			EMAIL_CONSUMER_CONSUMED_MESSAGES,
-			"Count of consumed messages",
 		)
 		.unwrap();
 

@@ -15,25 +15,32 @@ const CHANNEL: &str = "email";
 
 #[tokio::main]
 async fn main() {
+	// Load environment variables from the .env file
 	dotenvy::from_filename("email_consumer/app.env").ok();
+
+	// Initialize the logger
 	println!("RUST_LOG: {}", env::var("RUST_LOG").unwrap());
 	Builder::from_env(Env::default())
 		.target(Target::Stdout)
 		.init();
 
+	// Get environment variables
 	let nats_url = env::var("NATS_URL").unwrap_or("localhost:4222".to_string());
 	let prometheus_port: String = env::var("PROMETHEUS_PORT").unwrap_or("9090".to_string());
 	let host: String = env::var("HOST").unwrap_or("0.0.0.0".to_string());
 	let recipient_id = env::var("RECIPIENT_ID").unwrap_or("email_consumer".to_string());
 
+	// Set up Prometheus metrics
 	let (prometheus_layer, prometheus_recorder) = monitoring::server::default_pair();
 	let metrics = Arc::new(metrics::metrics::setup_metrics(prometheus_recorder.clone()));
 	set_global_recorder(prometheus_recorder.clone()).expect("Failed to set global recorder");
 
+	// Create the application state
 	let app_state = Arc::new(app_state::AppState {
 		metrics: metrics.clone(),
 	});
 
+	// Create the NATS consumer
 	let filter_subject = format!("notifications_{}.{}", CHANNEL, recipient_id);
 	let mut nats_consumer = consumer::service::NatsConsumer::new(NatsConsumerOptions {
 		nats_url:       nats_url.clone(),
@@ -43,6 +50,7 @@ async fn main() {
 	})
 	.await;
 
+	// Create the Prometheus server
 	let (mut prometheus, prometheus_listener) =
 		monitoring::server::create_metrics_router(monitoring::server::ServerOptions {
 			host:          host.clone(),
@@ -52,6 +60,7 @@ async fn main() {
 		.await;
 	prometheus = prometheus.layer(prometheus_layer);
 
+	// Start the futures
 	let prom_future = async {
 		info!("Prometheus server running on port: {}", prometheus_port);
 		axum::serve(prometheus_listener, prometheus)
@@ -69,5 +78,5 @@ async fn main() {
 		nats_consumer.start(message_handler).await
 	};
 
-	let (_res1, _res2) = tokio::join!(prom_future, nats_future);
+	let _ = tokio::join!(prom_future, nats_future);
 }
