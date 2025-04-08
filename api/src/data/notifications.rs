@@ -122,8 +122,6 @@ pub struct Notification {
 	pub priority:       Priority,
 	#[serde(rename = "status")]
 	pub status:         Status, // "pending", "sent", "failed", "cancelled"
-	#[serde(rename = "retryCount")]
-	pub retry_count:    u32,
 }
 
 #[derive(Default)]
@@ -142,7 +140,7 @@ pub trait NotificationRepository: Send + Sync {
 		&self,
 		opts: GetMessagesOptions,
 	) -> AppResult<Box<dyn Stream<Item = Result<Notification, AppError>> + Send + Unpin>>;
-	async fn update_message_status(&self, id: String, status: String) -> AppResult<()>;
+	async fn update_message_status(&self, id: String, status: Status) -> AppResult<()>;
 }
 
 pub struct NotificationRepositoryImpl {
@@ -244,9 +242,10 @@ impl NotificationRepository for NotificationRepositoryImpl {
 		Ok(Box::new(mapped_stream))
 	}
 
-	async fn update_message_status(&self, id: String, status: String) -> AppResult<()> {
+	async fn update_message_status(&self, id: String, status: Status) -> AppResult<()> {
 		let filter = doc! { "_id": id };
-		let update = doc! { "$set": { "status": status } };
+		let status_str: String = status.into();
+		let update = doc! { "$set": { "status": status_str } };
 		let result = self
 			.notifications
 			.update_one(filter, update)

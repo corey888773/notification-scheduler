@@ -19,12 +19,16 @@ mod utils;
 
 #[tokio::main]
 async fn main() {
+	// Load environment variables from the .env file
 	dotenvy::from_filename("api/src/app.env").ok();
+
+	// Initialize the logger
 	println!("RUST_LOG: {}", env::var("RUST_LOG").unwrap());
 	Builder::from_env(Env::default())
 		.target(Target::Stdout)
 		.init();
 
+	// Get environment variables
 	let port: String = env::var("APP_PORT").unwrap_or("8080".to_string());
 	let prometheus_port: String = env::var("PROMETHEUS_PORT").unwrap_or("9090".to_string());
 	let mongo_uri: String =
@@ -32,12 +36,14 @@ async fn main() {
 	let nats_url: String = env::var("NATS_URL").unwrap_or("localhost:4222".to_string());
 	let host: String = env::var("HOST").unwrap_or("0.0.0.0".to_string());
 
+	// Create the application state
 	let app_state = app_state::AppState::new(app_state::AppStateOptions {
 		mongo_url: mongo_uri.clone(),
 		nats_url:  nats_url.clone(),
 	})
 	.await;
 
+	// Set up Prometheus metrics
 	let (prometheus_layer, metric_handle) = PrometheusMetricLayer::pair();
 	let (mut app, app_listener) = server::server::create_server(
 		server::server::ServerOptions {
@@ -48,7 +54,6 @@ async fn main() {
 	)
 	.await;
 	app = app.layer(prometheus_layer.clone());
-
 	let (prometheus, prometheus_listener) =
 		monitoring::server::create_metrics_router(monitoring::server::ServerOptions {
 			host:          host.clone(),
