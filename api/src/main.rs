@@ -3,8 +3,10 @@
 use std::{env, time::Duration};
 
 use common::{axum, axum_prometheus::PrometheusMetricLayer, monitoring, tokio};
+use env_logger::{Builder, Env, Target};
+use log::info;
 
-use crate::{crone::scheduler::CronScheduler, data::notifications::Priority};
+use crate::{crone::build_notification_scheduler_future, data::notifications::Priority};
 
 mod api;
 mod app_state;
@@ -18,6 +20,11 @@ mod utils;
 #[tokio::main]
 async fn main() {
 	dotenvy::from_filename("api/src/app.env").ok();
+	println!("RUST_LOG: {}", env::var("RUST_LOG").unwrap());
+	Builder::from_env(Env::default())
+		.target(Target::Stdout)
+		.init();
+
 	let port: String = env::var("APP_PORT").unwrap_or("8080".to_string());
 	let prometheus_port: String = env::var("PROMETHEUS_PORT").unwrap_or("9090".to_string());
 	let mongo_uri: String =
@@ -51,35 +58,36 @@ async fn main() {
 		.await;
 
 	// Start the servers
-	let scheduler = crone::scheduler::CronSchedulerImpl::new(Duration::from_secs(5), move || {
-		let notification_service = app_state.notification_service.clone();
-		async move {
-			let utc_now = chrono::Utc::now();
-			println!("Scheduler running at: {}", utc_now);
-			notification_service
-				.send_messages(Priority::Low, utc_now)
-				.await
-				.unwrap();
-		}
-	});
+	let low_priority_scheduler_future = build_notification_scheduler_future(
+		app_state.clone(),
+		Priority::Low,
+		Duration::from_secs(5),
+	);
+
+	let high_priority_scheduler_future = build_notification_scheduler_future(
+		app_state.clone(),
+		Priority::High,
+		Duration::from_secs(1),
+	);
 
 	let app_future = async {
-		println!("Server running on port: {}", port);
+		info!("Server running on port: {}", port);
 		axum::serve(app_listener, app)
 			.await
 			.expect("Server failed to start");
 	};
 
 	let prom_future = async {
-		println!("Prometheus server running on port: {}", prometheus_port);
+		info!("Prometheus server running on port: {}", prometheus_port);
 		axum::serve(prometheus_listener, prometheus)
 			.await
 			.expect("Prometheus server failed to start");
 	};
 
-	let scheduler_future = async {
-		scheduler.start().await;
-	};
-
-	let (_res1, _res2, _res3) = tokio::join!(app_future, prom_future, scheduler_future);
+	let _ = tokio::join!(
+		app_future,
+		prom_future,
+		low_priority_scheduler_future,
+		high_priority_scheduler_future
+	);
 }

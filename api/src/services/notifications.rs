@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use common::tokio::time::sleep;
 use futures::stream::{FuturesUnordered, StreamExt};
+use log::{debug, error, info};
 
 use crate::{
 	data::{
@@ -49,7 +50,6 @@ impl NotificationServiceImpl {
 		if random_number == 0 {
 			Err(AppError::ServiceError("Random error occurred".to_string()))
 		} else {
-			println!("Sending message: {:?}", message.clone().id.unwrap());
 			self.send_individual_message(message).await
 		}
 	}
@@ -101,22 +101,22 @@ impl NotificationService for NotificationServiceImpl {
 
 								while attempts < 3 {
 									attempts += 1;
-									println!("Attempt: {:?} for: {:?} scheduledTime: {:?}", attempts, message.clone().id.unwrap(), message.scheduled_time);
+
+									debug!(
+										"Sending message attempt {} for message {:?}",
+										attempts, message
+									);
 									match this
 										.wrapped_send_individual_message(message.clone())
 										.await
 									{
 										Ok(_) => {
+											info!("Message sent successfully: {:?}", message);
 											sent = true;
 											break;
 										}
 										Err(e) => {
-											eprintln!(
-												"Attempt {} failed for message {:?}: {:?}",
-												attempts,
-												message.id.clone().unwrap(),
-												e
-											);
+											error!("Error sending message: {:?}", e);
 											sleep(Duration::from_secs(1)).await;
 										}
 									}
@@ -143,7 +143,7 @@ impl NotificationService for NotificationServiceImpl {
 		tasks
 			.for_each(|res| async {
 				if let Err(e) = res {
-					eprintln!("Error processing message: {:?}", e);
+					error!("Error processing message: {:?}", e);
 				}
 			})
 			.await;
@@ -155,7 +155,12 @@ impl NotificationService for NotificationServiceImpl {
 		let message_string =
 			serde_json::to_string(&message).map_err(|e| AppError::ServiceError(e.to_string()))?;
 		self.broker
-			.send_message(message.channel.into(),message.recipient, message_string, message.id.unwrap())
+			.send_message(
+				message.channel.into(),
+				message.recipient.id,
+				message_string,
+				message.id.unwrap(),
+			)
 			.await
 	}
 
@@ -175,5 +180,22 @@ impl NotificationService for NotificationServiceImpl {
 		}
 
 		Ok(notifications)
+	}
+}
+
+fn calculate_recipient_time(utc_time: DateTime<Utc>, offset: &str) -> DateTime<Utc> {
+	let offset_int = offset_to_int(offset);
+	let offset_duration = chrono::Duration::seconds(offset_int);
+	utc_time + offset_duration
+}
+
+fn offset_to_int(offset: &str) -> i64 {
+	let offset_parts: Vec<&str> = offset.split(':').collect();
+	if offset_parts.len() == 2 {
+		let hours: i64 = offset_parts[0].parse().unwrap_or(0);
+		let minutes: i64 = offset_parts[1].parse().unwrap_or(0);
+		hours * 3600 + minutes * 60
+	} else {
+		0
 	}
 }

@@ -10,8 +10,13 @@ use crate::utils::{errors::AppError, types::AppResult};
 
 #[async_trait]
 pub trait Broker: Send + Sync {
-	// Note: we add a key parameter to use for the deduplication header.
-	async fn send_message(&self, topic: String, payload: String, key: String) -> AppResult<()>;
+	async fn send_message(
+		&self,
+		channel: String,
+		recipient: String,
+		payload: String,
+		dedup_key: String,
+	) -> AppResult<()>;
 }
 
 pub struct NatsImpl {
@@ -29,17 +34,15 @@ impl NatsImpl {
 			.await
 			.expect("Failed to connect to NATS");
 		let js = async_nats::jetstream::new(client.clone());
-		let stream_config = Config {
-			name: "notifications".to_string(),
-			subjects: vec!["notifications.*".to_string()],
-			retention: async_nats::jetstream::stream::RetentionPolicy::WorkQueue,
-			duplicate_window: std::time::Duration::from_secs(60),
-			max_age: std::time::Duration::from_secs(60 * 60 * 24),
-			..Default::default()
-		};
-		js.get_or_create_stream(stream_config)
-			.await
-			.expect("Failed to create stream");
+		setup_streams(
+			&js,
+			vec![
+				"notifications_email".to_string(),
+				"notifications_push".to_string(),
+			],
+		)
+		.await
+		.expect("Failed to setup streams");
 		Self {
 			client,
 			js: Arc::new(js),
@@ -49,11 +52,17 @@ impl NatsImpl {
 
 #[async_trait]
 impl Broker for NatsImpl {
-	async fn send_message(&self, topic: String, payload: String, key: String) -> AppResult<()> {
+	async fn send_message(
+		&self,
+		channel: String,
+		recipient: String,
+		payload: String,
+		dedup_key: String,
+	) -> AppResult<()> {
 		let mut headers = HeaderMap::new();
-		headers.insert("Nats-Msg-Id", key);
+		headers.insert("Nats-Msg-Id", dedup_key);
 
-		let topic = format!("notifications.{}", topic);
+		let topic = format!("notifications_{}.{}", channel, recipient);
 		let publish_ack = self
 			.js
 			.publish_with_headers(topic, headers, payload.into())
@@ -70,4 +79,22 @@ impl Broker for NatsImpl {
 
 		Ok(())
 	}
+}
+
+async fn setup_streams(js: &Context, streams: Vec<String>) -> AppResult<()> {
+	for stream in streams {
+		let stream_config = Config {
+			name: stream.clone(),
+			subjects: vec![format!("{}.*", stream)],
+			retention: async_nats::jetstream::stream::RetentionPolicy::WorkQueue,
+			duplicate_window: std::time::Duration::from_secs(60),
+			max_age: std::time::Duration::from_secs(60 * 60 * 24),
+			..Default::default()
+		};
+
+		js.get_or_create_stream(stream_config)
+			.await
+			.map_err(|e| AppError::ServiceError(format!("Failed to create stream: {}", e)))?;
+	}
+	Ok(())
 }

@@ -99,9 +99,9 @@ impl From<Priority> for String {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct TimeWithTimezone {
-	#[serde(rename = "time")]
-	pub time:            DateTime<Utc>,
+pub struct Recipient {
+	#[serde(rename = "id")]
+	pub id:              String,
 	#[serde(rename = "timezone_offset")]
 	pub timezone_offset: String,
 }
@@ -115,9 +115,9 @@ pub struct Notification {
 	#[serde(rename = "channel")]
 	pub channel:        Channel, // "push" or "email"
 	#[serde(rename = "recipient")]
-	pub recipient:      String, // email or device token, but for simplicity, using String
+	pub recipient:      Recipient, // email or device token, but for simplicity, using String
 	#[serde(rename = "scheduledTime")]
-	pub scheduled_time: TimeWithTimezone,
+	pub scheduled_time: DateTime<Utc>,
 	#[serde(rename = "priority")]
 	pub priority:       Priority,
 	#[serde(rename = "status")]
@@ -179,6 +179,7 @@ impl NotificationRepository for NotificationRepositoryImpl {
 		opts: GetMessagesOptions,
 	) -> AppResult<Box<dyn Stream<Item = Result<Notification, AppError>> + Send + Unpin>> {
 		let mut match_stage = doc! {};
+		let mut pipeline = vec![];
 
 		if let Some(priority) = opts.priority {
 			let priority_str: String = priority.into();
@@ -192,39 +193,37 @@ impl NotificationRepository for NotificationRepositoryImpl {
 
 		if let Some(scheduled_time) = opts.scheduled_time {
 			let scheduled_time_str = scheduled_time.to_rfc3339();
-			match_stage.insert("scheduledTime.time", doc! { "$lte": scheduled_time_str });
+			match_stage.insert("scheduledTime", doc! { "$lte": scheduled_time_str.clone() });
+
+			if opts.respect_nighttime.unwrap_or(false) {
+				let start_hour = 8;
+				let end_hour = 22;
+
+				pipeline.push(doc! {
+					"$addFields": {
+						"userLocalHour": {
+							"$add": [
+								{"$hour": {"$toDate": scheduled_time_str }},
+								{"$divide": [
+									{"$toInt": {"$substr": ["$recipient.timezone_offset", 0, 3]}},
+									1
+								]}
+							]
+						}
+					}
+				});
+				pipeline.push(doc! {
+					"$match": {
+						"userLocalHour": {
+							"$gte": start_hour,
+							"$lt": end_hour
+						}
+					}
+				});
+			}
 		}
 
-		let mut pipeline = vec![doc! { "$match": match_stage }];
-
-		if opts.respect_nighttime.unwrap_or(false) && opts.scheduled_time.is_some() {
-			let start_hour = 8;
-			let end_hour = 22;
-
-			pipeline.push(doc! {
-				"$addFields": {
-					"userLocalHour": {
-						"$add": [
-							{"$hour": {"$toDate": "$scheduledTime.time"}},
-							{"$divide": [
-								{"$toInt": {"$substr": ["$scheduledTime.timezone_offset", 0, 3]}},
-								1
-							]}
-						]
-					}
-				}
-			});
-
-			pipeline.push(doc! {
-				"$match": {
-					"userLocalHour": {
-						"$gte": start_hour,
-						"$lt": end_hour
-					}
-				}
-			});
-		}
-
+		pipeline.push(doc! { "$match": match_stage });
 		pipeline.push(doc! { "$limit": opts.limit.unwrap_or(i64::MAX) });
 		let cursor = self
 			.notifications
@@ -232,7 +231,6 @@ impl NotificationRepository for NotificationRepositoryImpl {
 			.await
 			.map_err(|e| AppError::RepositoryError(format!("Failed to aggregate: {}", e)))?;
 
-		// Convert cursor to stream
 		let stream = cursor.into_stream();
 		let mapped_stream = stream.map(|result| {
 			result
